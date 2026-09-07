@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
+import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.ensemble import RandomForestRegressor
@@ -9,10 +11,26 @@ from lightgbm import LGBMRegressor
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPRegressor
-import joblib
+
 # 设置绘图字体支持
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
+
+# ============ 路径配置 ============
+MODEL_DIR = '../../weights'  # 可以改成你想要的任何路径
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+MODEL_PATHS = {
+    'linear_regression': os.path.join(MODEL_DIR, 'model_linear_regression.pkl'),
+    'ridge': os.path.join(MODEL_DIR, 'model_ridge.pkl'),
+    'random_forest': os.path.join(MODEL_DIR, 'model_random_forest.pkl'),
+    'xgboost': os.path.join(MODEL_DIR, 'model_xgboost.pkl'),
+    'lightgbm': os.path.join(MODEL_DIR, 'model_lightgbm.pkl'),
+    'neural_network': os.path.join(MODEL_DIR, 'model_neural_network.pkl'),
+    'scaler': os.path.join(MODEL_DIR, 'scaler.pkl'),
+    'config': os.path.join(MODEL_DIR, 'system_config.pkl'),
+}
+# ================================
 
 # 1. 读取数据 (Excel)
 excel_path = 'fish_body_data.xlsx'
@@ -36,7 +54,7 @@ X_test_scaled = scaler.transform(X_test)
 
 # 3. 辅助评估函数与结果收集器
 results = []
-model_names = []  #用于记录模型名称
+
 
 def evaluate_and_record(y_true, y_pred, model_name):
     r2 = r2_score(y_true, y_pred)
@@ -60,15 +78,14 @@ def evaluate_and_record(y_true, y_pred, model_name):
     print(f" - MAPE (平均绝对百分比误差): {mape:.2f}%")
     return y_pred
 
+
 # 存储预测结果用于绘图
 predictions = {}
-models_to_save = {}  # 用于保存模型对象
 
 # 4. 训练各个模型
 # (1) 多元线性回归
 lr_model = LinearRegression()
 lr_model.fit(X_train, y_train)
-models_to_save['linear_regression'] = lr_model
 predictions['Linear Regression'] = evaluate_and_record(
     y_test, lr_model.predict(X_test), 'Linear Regression'
 )
@@ -76,7 +93,6 @@ predictions['Linear Regression'] = evaluate_and_record(
 # (2) 岭回归
 ridge_model = Ridge(alpha=1.0, random_state=42)
 ridge_model.fit(X_train, y_train)
-models_to_save['ridge'] = ridge_model
 predictions['Ridge Regression'] = evaluate_and_record(
     y_test, ridge_model.predict(X_test), 'Ridge Regression'
 )
@@ -86,7 +102,6 @@ rf_model = RandomForestRegressor(
     n_estimators=100, max_depth=6, random_state=42
 )
 rf_model.fit(X_train, y_train)
-models_to_save['random_forest'] = rf_model
 predictions['Random Forest'] = evaluate_and_record(
     y_test, rf_model.predict(X_test), 'Random Forest'
 )
@@ -100,7 +115,6 @@ xgb_model = XGBRegressor(
     random_state=42
 )
 xgb_model.fit(X_train, y_train)
-models_to_save['xgboost'] = xgb_model
 predictions['XGBoost'] = evaluate_and_record(
     y_test, xgb_model.predict(X_test), 'XGBoost'
 )
@@ -115,31 +129,27 @@ lgb_model = LGBMRegressor(
     verbosity=-1
 )
 lgb_model.fit(X_train, y_train)
-models_to_save['lightgbm'] = lgb_model
 predictions['LightGBM'] = evaluate_and_record(
     y_test, lgb_model.predict(X_test), 'LightGBM'
 )
 
-# (6) 五层神经网络 (新增)
-# 使用 scaled 数据进行训练
+# (6) 五层神经网络
 mlp_model = MLPRegressor(
-    hidden_layer_sizes=(256,128,64, 32, 16),  # 三个隐藏层，分别为64、32、16个神经元
-    activation='relu',                # 激活函数
-    solver='adam',                   # 优化器
-    alpha=0.001,                     # L2正则化系数
+    hidden_layer_sizes=(256, 128, 64, 32, 16),  # 五个隐藏层
+    activation='relu',
+    solver='adam',
+    alpha=0.001,
     batch_size='auto',
-    learning_rate='adaptive',        # 自适应学习率
+    learning_rate='adaptive',
     learning_rate_init=0.001,
-    max_iter=1000,                   # 最大迭代次数
-    early_stopping=True,             # 使用早停防止过拟合
+    max_iter=1000,
+    early_stopping=True,
     validation_fraction=0.1,
-    n_iter_no_change=20,             # 早停耐心值
+    n_iter_no_change=20,
     random_state=42,
     verbose=False
 )
 mlp_model.fit(X_train_scaled, y_train)
-models_to_save['neural_network'] = mlp_model
-models_to_save['scaler'] = scaler  # 保存标准化器，用于后续预测
 
 # 预测时需要先标准化
 y_pred_mlp = mlp_model.predict(X_test_scaled)
@@ -149,6 +159,7 @@ predictions['Neural Network'] = evaluate_and_record(
 
 # 5. 生成论文对比表格
 df_summary = pd.DataFrame(results)
+print("模型性能对比汇总表")
 print(df_summary.to_string(index=False))
 
 # 6. 可视化对比图 (3x2 散点对比图)
@@ -179,35 +190,58 @@ for idx, (key, label_cn, color) in enumerate(model_keys):
     ax.grid(True, linestyle='--', alpha=0.5)
 
 plt.tight_layout()
+plt.savefig(os.path.join(MODEL_DIR, 'model_comparison.png'), dpi=300, bbox_inches='tight')
 plt.show()
 
-# 7. 保存模型
-
-# 保存所有模型
-joblib.dump(lr_model, 'model_linear_regression.pkl')
-joblib.dump(ridge_model, 'model_ridge.pkl')
-joblib.dump(rf_model, 'model_random_forest.pkl')
-joblib.dump(xgb_model, 'model_xgboost.pkl')
-joblib.dump(lgb_model, 'model_lightgbm.pkl')
-joblib.dump(mlp_model, 'model_neural_network.pkl')
-joblib.dump(scaler, 'scaler.pkl')  # 保存标准化器
+# 7. 保存模型（使用统一路径）
+joblib.dump(lr_model, MODEL_PATHS['linear_regression'])
+joblib.dump(ridge_model, MODEL_PATHS['ridge'])
+joblib.dump(rf_model, MODEL_PATHS['random_forest'])
+joblib.dump(xgb_model, MODEL_PATHS['xgboost'])
+joblib.dump(lgb_model, MODEL_PATHS['lightgbm'])
+joblib.dump(mlp_model, MODEL_PATHS['neural_network'])
+joblib.dump(scaler, MODEL_PATHS['scaler'])
 
 # 保存配置
 config = {
     'k_factor': 0.962,
     'features': ['体长', '体高'],
-    'neural_network_architecture': '2-64-32-16-1'
+    'neural_network_architecture': '2-256-128-64-32-16-1'
 }
-joblib.dump(config, 'system_config.pkl')
+joblib.dump(config, MODEL_PATHS['config'])
 
-def estimate_fish_weight(top_fish_list, side_fish_list):
-    """提取特征，加载多模型计算平均体重并写回顶视角与侧视角鱼类实例中"""
+print(f"\n所有模型已保存到: {os.path.abspath(MODEL_DIR)}")
+
+
+def estimate_fish_weight(top_fish_list, side_fish_list, model_dir=MODEL_DIR):
+    """
+    提取特征，加载多模型计算平均体重并写回顶视角与侧视角鱼类实例中。
+
+    参数:
+        top_fish_list: 俯视角鱼实例列表，每个实例需有 spine_length 属性
+        side_fish_list: 侧视角鱼实例列表，每个实例需有 body_height_3d 属性
+        model_dir: 模型文件所在目录，默认使用全局 MODEL_DIR
+
+    返回:
+        None (原地修改 top_fish_list 和 side_fish_list 中的 weight 属性)
+    """
     if len(top_fish_list) != len(side_fish_list):
         raise ValueError(
             f"输入列表长度不一致: 俯视角 ({len(top_fish_list)}) vs 侧视角 ({len(side_fish_list)})"
         )
     if not top_fish_list:
         return
+
+    # 构建模型路径
+    paths = {
+        'linear_regression': os.path.join(model_dir, 'model_linear_regression.pkl'),
+        'ridge': os.path.join(model_dir, 'model_ridge.pkl'),
+        'random_forest': os.path.join(model_dir, 'model_random_forest.pkl'),
+        'xgboost': os.path.join(model_dir, 'model_xgboost.pkl'),
+        'lightgbm': os.path.join(model_dir, 'model_lightgbm.pkl'),
+        'neural_network': os.path.join(model_dir, 'model_neural_network.pkl'),
+        'scaler': os.path.join(model_dir, 'scaler.pkl'),
+    }
 
     # 1. 提取特征矩阵 [体长, 体高]
     features = [
@@ -218,16 +252,16 @@ def estimate_fish_weight(top_fish_list, side_fish_list):
 
     # 2. 定义模型配置
     models_config = [
-        ("多元线性回归", "model_linear_regression.pkl", False),
-        ("岭回归", "model_ridge.pkl", False),
-        ("随机森林", "model_random_forest.pkl", False),
-        ("XGBoost", "model_xgboost.pkl", False),
-        ("LightGBM", "model_lightgbm.pkl", False),
-        ("神经网络", "model_neural_network.pkl", True),
+        ("多元线性回归", paths['linear_regression'], False),
+        ("岭回归", paths['ridge'], False),
+        ("随机森林", paths['random_forest'], False),
+        ("XGBoost", paths['xgboost'], False),
+        ("LightGBM", paths['lightgbm'], False),
+        ("神经网络", paths['neural_network'], True),
     ]
 
-    # 加载标准化特征用于神经网络
-    scaler = joblib.load("scaler.pkl")
+    # 加载标准化器
+    scaler = joblib.load(paths['scaler'])
     X_scaled = scaler.transform(X)
 
     # 3. 批量推理收集预测结果
@@ -239,7 +273,6 @@ def estimate_fish_weight(top_fish_list, side_fish_list):
         preds_list.append(pred)
 
     # 4. 计算所有模型输出的平均体重 (Shape: [N_fishes])
-    # preds_array Shape 为 [N_models, N_fishes] -> axis=0 求均值得到 [N_fishes]
     avg_weights = np.mean(np.array(preds_list), axis=0)
 
     # 5. 将平均体重赋予顶视角和侧视角的实例中
@@ -247,3 +280,5 @@ def estimate_fish_weight(top_fish_list, side_fish_list):
         weight_val = float(weight)
         top.weight = weight_val
         side.weight = weight_val
+
+    return avg_weights
