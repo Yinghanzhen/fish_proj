@@ -2,7 +2,6 @@ import numpy as np
 from skimage.morphology import skeletonize
 from typing import List, Optional, Tuple
 
-
 def extract_skeleton(
         mask: np.ndarray,
         head_kpt: Tuple[float, float],

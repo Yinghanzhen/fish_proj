@@ -1,7 +1,7 @@
 import numpy as np
 from typing import List, Tuple
 from scipy.optimize import linear_sum_assignment
-from fish_weight_estimation.fish_class import TopFishData, SideFishData
+from fish_weight_estimation.fish_camera_class import TopFishData, SideFishData
 
 
 def compute_straightness_factor(pts_2d: List[List[float]]) -> float:

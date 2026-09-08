@@ -56,3 +56,21 @@ class SideFishData:
     def __post_init__(self):
         self.x_mid = (self.bbox[0] + self.bbox[2]) / 2.0
         self.y_mid = (self.bbox[1] + self.bbox[3]) / 2.0
+
+
+@dataclass
+class CameraParams:
+    """相机内外参及物理介质参数配置"""
+
+    fx: float  # 焦距 fx
+    fy: float  # 焦距 fy
+    cx: float  # 光心 cx
+    cy: float  # 光心 cy
+
+    air_dist_mm: float = 400.0  # 俯视: 相机到水面距离 (mm) | 侧视: 相机到玻璃外表面距离 (mm)
+    glass_thick_mm: float = (
+        0.0  # 玻璃厚度 (mm) (仅侧视三介质折射时使用，俯视填 0)
+    )
+    n_air: float = 1.000  # 空气折射率
+    n_water: float = 1.333  # 水折射率
+    n_glass: float = 1.490  # 玻璃折射率

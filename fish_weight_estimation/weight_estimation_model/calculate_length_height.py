@@ -1,6 +1,6 @@
 import numpy as np
 from typing import List
-from fish_weight_estimation.fish_class import TopFishData, SideFishData
+from fish_weight_estimation.fish_camera_class import TopFishData, SideFishData
 
 def calculate_lengths(top_fishes: List[TopFishData]) -> None:
     """

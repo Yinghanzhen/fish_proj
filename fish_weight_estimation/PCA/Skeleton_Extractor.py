@@ -1,4 +1,4 @@
-from fish_weight_estimation.fish_class import TopFishData,SideFishData
+from fish_weight_estimation.fish_camera_class import TopFishData,SideFishData
 import cv2
 import numpy as np
 from dataclasses import dataclass, field

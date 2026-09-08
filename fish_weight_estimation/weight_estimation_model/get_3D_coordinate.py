@@ -1,156 +1,220 @@
-import cv2
+from dataclasses import dataclass, field
+import math
+from typing import List, Optional, Tuple, Union
 import numpy as np
-from typing import List, Optional, Tuple
-from fish_weight_estimation.fish_class import TopFishData, SideFishData
+from fish_weight_estimation.fish_camera_class import TopFishData,SideFishData,CameraParams
 
-class StereoSpine3DReconstructor:
-    """
-    双目 3D 骨架重建器：
-    以左图为主视图，自动在右图进行极线匹配，解算 3D 空间坐标并回写至 TopFishData 实例。
-    """
-    def __init__(self, K1: np.ndarray, D1: np.ndarray,
-                 K2: np.ndarray, D2: np.ndarray,
-                 R: np.ndarray, T: np.ndarray,
-                 patch_size: int = 7,
-                 max_disparity: int = 150,
-                 match_threshold: float = 0.6):
-        """
-        :param K1, D1: 左相机内参矩阵 (3x3) 与畸变系数
-        :param K2, D2: 右相机内参矩阵 (3x3) 与畸变系数
-        :param R, T: 双目相机外参 (左相机到右相机的旋转矩阵和平移向量)
-        :param patch_size: 匹配小方块半径 (窗口大小为 (2*patch_size+1)^2)
-        :param max_disparity: 右图水平沿极线搜索的最大视差范围 (像素)
-        :param match_threshold: NCC 模板匹配置信度阈值 (0~1)
-        """
-        self.K1, self.D1 = K1, D1
-        self.K2, self.D2 = K2, D2
-        self.patch_size = patch_size
-        self.max_disparity = max_disparity
-        self.match_threshold = match_threshold
+# 2D 像素到 3D 空间的底层解算 (含水下折射校正)
+def pixel_depth_to_3d_refracted(
+    u: float,
+    v: float,
+    depth_raw_mm: float,
+    cam: CameraParams,
+    is_side_view: bool = False,
+) -> Tuple[float, float, float]:
+    """将单个 2D 像素 (u, v) 结合原始深度 Z_raw 解算为折射校正后的 3D 坐标 (X, Y, Z)"""
+    if depth_raw_mm <= 0 or math.isnan(depth_raw_mm):
+        return (0.0, 0.0, 0.0)
 
-        # 构建左右相机的 3x4 投影矩阵 P1, P2 (以左相机坐标系为世界坐标系原点)
-        self.P1 = np.hstack((self.K1, np.zeros((3, 1))))
-        RT = np.hstack((R, T.reshape(3, 1)))
-        self.P2 = self.K2 @ RT
+    # 1. 空气中的入射角
+    dx = (u - cam.cx) / cam.fx
+    dy = (v - cam.cy) / cam.fy
+    tan_theta_air = math.sqrt(dx**2 + dy**2)
+    sin_theta_air = (
+        tan_theta_air / math.sqrt(1 + tan_theta_air**2)
+        if tan_theta_air > 0
+        else 0.0
+    )
 
-    def _find_matching_point(self, img_left: np.ndarray, img_right: np.ndarray,
-                             pt_left: Tuple[float, float]) -> Optional[Tuple[float, float]]:
-        """底层方法：输入左图单点，利用极线约束自动在右图搜寻最佳匹配点"""
-        xl, yl = int(pt_left[0]), int(pt_left[1])
-        h, w = img_left.shape[:2]
+    # 2. 折射角计算 (斯涅尔定律)
+    sin_theta_water = min(
+        1.0, max(-1.0, sin_theta_air * (cam.n_air / cam.n_water))
+    )
+    cos_theta_water = math.sqrt(1.0 - sin_theta_water**2)
+    tan_theta_water = (
+        sin_theta_water / cos_theta_water if cos_theta_water > 1e-6 else 0.0
+    )
 
-        # 边界安全检查
-        if (xl - self.patch_size < 0 or xl + self.patch_size >= w or
-                yl - self.patch_size < 0 or yl + self.patch_size >= h):
-            return None
+    if is_side_view and cam.glass_thick_mm > 0:
+        sin_theta_glass = min(
+            1.0, max(-1.0, sin_theta_air * (cam.n_air / cam.n_glass))
+        )
+        cos_theta_glass = math.sqrt(1.0 - sin_theta_glass**2)
+        tan_theta_glass = (
+            sin_theta_glass / cos_theta_glass if cos_theta_glass > 1e-6 else 0.0
+        )
+    else:
+        tan_theta_glass = 0.0
 
-        # 1. 截取左图局部模板
-        template = img_left[yl - self.patch_size: yl + self.patch_size + 1,
-                   xl - self.patch_size: xl + self.patch_size + 1]
+    # 3. Z 轴物理实际深度与径向总偏移计算
+    if not is_side_view:
+        # 俯视 (空气 -> 水)
+        z_sub_apparent = max(0.0, depth_raw_mm - cam.air_dist_mm)
+        z_sub_true = z_sub_apparent * (cam.n_water / cam.n_air)
+        Z_true = cam.air_dist_mm + z_sub_true
+        r_total = (
+            cam.air_dist_mm * tan_theta_air + z_sub_true * tan_theta_water
+        )
+    else:
+        # 侧视 (空气 -> 玻璃 -> 水)
+        z_sub_apparent = max(
+            0.0, depth_raw_mm - cam.air_dist_mm - cam.glass_thick_mm
+        )
+        z_sub_true = z_sub_apparent * (cam.n_water / cam.n_air)
+        Z_true = cam.air_dist_mm + cam.glass_thick_mm + z_sub_true
+        r_total = (
+            cam.air_dist_mm * tan_theta_air
+            + cam.glass_thick_mm * tan_theta_glass
+            + z_sub_true * tan_theta_water
+        )
 
-        # 2. 沿右图极线（水平扫描线）截取搜索带
-        xr_min = max(self.patch_size, xl - self.max_disparity)
-        xr_max = xl
-        if xr_max - xr_min < self.patch_size:
-            return None
+    # 4. 映射到 X, Y 轴
+    phi = math.atan2(dy, dx)
+    X_true = r_total * math.cos(phi)
+    Y_true = r_total * math.sin(phi)
 
-        search_strip = img_right[yl - self.patch_size: yl + self.patch_size + 1,
-                       xr_min - self.patch_size: xr_max + self.patch_size + 1]
+    return (float(X_true), float(Y_true), float(Z_true))
 
-        if template.shape[0] > search_strip.shape[0] or template.shape[1] > search_strip.shape[1]:
-            return None
 
-        # 3. NCC (归一化互相关) 模板匹配
-        res = cv2.matchTemplate(search_strip, template, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+def get_depth_at_pixel(
+    depth_map: np.ndarray, u: float, v: float, window_size: int = 3
+) -> float:
+    """提取像素 (u, v) 处的深度，小邻域中值滤波防空洞"""
+    h, w = depth_map.shape[:2]
+    cx, cy = int(round(u)), int(round(v))
 
-        # 4. 超过阈值则认为找到对应点
-        if max_val >= self.match_threshold:
-            match_x = float(xr_min + max_loc[0])
-            match_y = float(yl)  # 已极线校正前提下 y 轴平行；未严格校正可使用 yl + max_loc[1]
-            return (match_x, match_y)
+    r = window_size // 2
+    y_min, y_max = max(0, cy - r), min(h, cy + r + 1)
+    x_min, x_max = max(0, cx - r), min(w, cx + r + 1)
 
-        return None
+    patch = depth_map[y_min:y_max, x_min:x_max]
+    valid_mask = (patch > 0) & (~np.isnan(patch))
 
-    def _triangulate_batch(self, pts_left: List[Tuple[float, float]],
-                           pts_right: List[Tuple[float, float]]) -> np.ndarray:
-        """底层方法：调用 OpenCV 三角测量算子批量计算 3D 物理坐标 (X, Y, Z)"""
-        pts_l = np.array(pts_left, dtype=np.float64).reshape(-1, 1, 2)
-        pts_r = np.array(pts_right, dtype=np.float64).reshape(-1, 1, 2)
+    if np.any(valid_mask):
+        return float(np.median(patch[valid_mask]))
+    return 0.0
 
-        # 相机去畸变与坐标归一化
-        undist_l = cv2.undistortPoints(pts_l, self.K1, self.D1, P=self.K1).reshape(-1, 2).T
-        undist_r = cv2.undistortPoints(pts_r, self.K2, self.D2, P=self.K2).reshape(-1, 2).T
 
-        # 双目三角测量
-        pts_4d = cv2.triangulatePoints(self.P1, self.P2, undist_l, undist_r)
+# 4. 核心功能函数 (只负责填充 3D 坐标)
+def process_fish_3d_data(
+    top_fishes: Optional[List[TopFishData]] = None,
+    side_fishes: Optional[List[SideFishData]] = None,
+    top_depth_map: Optional[np.ndarray] = None,
+    side_depth_map: Optional[np.ndarray] = None,
+    top_cam_params: Optional[Union[CameraParams, dict]] = None,
+    side_cam_params: Optional[Union[CameraParams, dict]] = None,
+) -> Tuple[List[TopFishData], List[SideFishData]]:
+    """读取深度图与相机参数，自动解算并填入 top_fishes 与 side_fishes 中的所有 3D 关键点坐标与 3D 骨架线。"""
 
-        # 齐次坐标转 3D 真实物理坐标 (X/W, Y/W, Z/W)
-        pts_3d = (pts_4d[:3, :] / pts_4d[3, :]).T
-        return pts_3d
+    def parse_params(p):
+        if isinstance(p, dict):
+            return CameraParams(**p)
+        return p
 
-    def process_fish_list(self, fish_list: List[TopFishData],
-                          img_left: np.ndarray,
-                          img_right: np.ndarray) -> List[TopFishData]:
-        """
-        主入口：传入鱼实例列表及左右图，自动提取右图坐标、计算 3D 坐标并写回原实例。
+    top_cam = parse_params(top_cam_params)
+    side_cam = parse_params(side_cam_params)
 
-        :param fish_list: 包含左图 2D 数据的 TopFishData 实例列表
-        :param img_left: 左相机图像 (灰度图或彩色图)
-        :param img_right: 右相机图像
-        :return: 处理完成后的 fish_list (写回了 head_kpt_3d, tail_kpt_3d, spine_3d, spine_length)
-        """
-        # 转为单通道灰度图提升模板匹配效率与鲁棒性
-        gray_left = cv2.cvtColor(img_left, cv2.COLOR_BGR2GRAY) if img_left.ndim == 3 else img_left
-        gray_right = cv2.cvtColor(img_right, cv2.COLOR_BGR2GRAY) if img_right.ndim == 3 else img_right
+    # 1. 填充俯视鱼类的 3D 坐标 (head_kpt_3d, tail_kpt_3d, spine_3d)
+    if top_fishes and top_depth_map is not None and top_cam is not None:
+        for fish in top_fishes:
+            # 鱼头 3D
+            if fish.head_kpt_2d:
+                u, v = fish.head_kpt_2d
+                d_head = get_depth_at_pixel(top_depth_map, u, v)
+                fish.head_kpt_3d = pixel_depth_to_3d_refracted(
+                    u, v, d_head, top_cam, is_side_view=False
+                )
 
-        for fish in fish_list:
-            # 1. 鱼头与鱼尾 3D 坐标解算
-            for kpt_2d_attr, kpt_3d_attr in [('head_kpt_2d', 'head_kpt_3d'), ('tail_kpt_2d', 'tail_kpt_3d')]:
-                pt_2d = getattr(fish, kpt_2d_attr)
-                if pt_2d is not None:
-                    match_r = self._find_matching_point(gray_left, gray_right, pt_2d)
-                    if match_r is not None:
-                        pt_3d = self._triangulate_batch([pt_2d], [match_r])[0]
-                        setattr(fish, kpt_3d_attr, tuple(pt_3d))
+            # 鱼尾 3D
+            if fish.tail_kpt_2d:
+                u, v = fish.tail_kpt_2d
+                d_tail = get_depth_at_pixel(top_depth_map, u, v)
+                fish.tail_kpt_3d = pixel_depth_to_3d_refracted(
+                    u, v, d_tail, top_cam, is_side_view=False
+                )
 
-            # 2. 骨架线 (Spine 2D) 自动匹配与 3D 解算
-            if not fish.spine_2d:
-                continue
+            # 骨架线点阵 3D (spine_3d)
+            if fish.spine_2d:
+                spine_3d_list = []
+                for pt_2d in fish.spine_2d:
+                    if pt_2d is not None and len(pt_2d) >= 2:
+                        u, v = pt_2d[0], pt_2d[1]
+                        d = get_depth_at_pixel(top_depth_map, u, v)
+                        p_3d = pixel_depth_to_3d_refracted(
+                            u, v, d, top_cam, is_side_view=False
+                        )
+                        spine_3d_list.append(p_3d)
+                    else:
+                        spine_3d_list.append([0.0, 0.0, 0.0])
 
-            N_pts = len(fish.spine_2d)
-            spine_3d_array = np.full((N_pts, 3), np.nan, dtype=np.float64)
+                fish.spine_3d = np.array(spine_3d_list, dtype=np.float64)
 
-            matched_pts_l = []
-            matched_pts_r = []
-            valid_indices = []
+    # 2. 填充侧视鱼类的 3D 坐标 (top_kpt_3d, bottom_kpt_3d)
+    if side_fishes and side_depth_map is not None and side_cam is not None:
+        for fish in side_fishes:
+            # 背部点 3D
+            if fish.top_kpt_2d:
+                u, v = fish.top_kpt_2d
+                d_top = get_depth_at_pixel(side_depth_map, u, v)
+                fish.top_kpt_3d = pixel_depth_to_3d_refracted(
+                    u, v, d_top, side_cam, is_side_view=True
+                )
 
-            # 遍历左图 2D 骨架点，跳过预留的 [None, None] 遮挡点
-            for idx, pt in enumerate(fish.spine_2d):
-                if pt is None or pt == [None, None] or np.isnan(pt[0]):
-                    continue  # 保留为 np.nan
+            # 腹部点 3D
+            if fish.bottom_kpt_2d:
+                u, v = fish.bottom_kpt_2d
+                d_bottom = get_depth_at_pixel(side_depth_map, u, v)
+                fish.bottom_kpt_3d = pixel_depth_to_3d_refracted(
+                    u, v, d_bottom, side_cam, is_side_view=True
+                )
 
-                match_pt_r = self._find_matching_point(gray_left, gray_right, (pt[0], pt[1]))
-                if match_pt_r is not None:
-                    matched_pts_l.append(pt)
-                    matched_pts_r.append(match_pt_r)
-                    valid_indices.append(idx)
+    return top_fishes, side_fishes
 
-            # 批量三角测量算出的有效 3D 坐标，精准写回对应的数组索引
-            if len(matched_pts_l) > 0:
-                calc_3d = self._triangulate_batch(matched_pts_l, matched_pts_r)
-                for i, orig_idx in enumerate(valid_indices):
-                    spine_3d_array[orig_idx] = calc_3d[i]
 
-            # 写回实例属性
-            fish.spine_3d = spine_3d_array
+# 5. 测试运行示例
+if __name__ == "__main__":
+    # 相机配置
+    top_cam_cfg = CameraParams(
+        fx=615.0, fy=615.0, cx=320.0, cy=240.0, air_dist_mm=400.0
+    )
+    side_cam_cfg = CameraParams(
+        fx=620.0,
+        fy=620.0,
+        cx=320.0,
+        cy=240.0,
+        air_dist_mm=200.0,
+        glass_thick_mm=10.0,
+    )
 
-            # 3. 统计现有已知无遮挡 3D 骨架片段的累计体长
-            valid_mask = ~np.isnan(spine_3d_array[:, 0])
-            valid_3d_pts = spine_3d_array[valid_mask]
-            if len(valid_3d_pts) >= 2:
-                diffs = np.diff(valid_3d_pts, axis=0)
-                segment_lengths = np.sqrt(np.sum(diffs ** 2, axis=1))
-                fish.spine_length = float(np.sum(segment_lengths))
+    # 深度图与测试数据
+    top_depth = np.full((480, 640), 650.0, dtype=np.float32)
+    side_depth = np.full((480, 640), 550.0, dtype=np.float32)
 
-        return fish_list
+    top_fish = TopFishData(
+        fish_id=1,
+        bbox=(100, 200, 500, 300),
+        head_kpt_2d=(150, 250),
+        tail_kpt_2d=(450, 250),
+        spine_2d=[[150, 250], [250, 255], [350, 245], [450, 250]],
+    )
+    side_fish = SideFishData(
+        fish_id=101,
+        bbox=(200, 100, 400, 350),
+        top_kpt_2d=(300, 120),
+        bottom_kpt_2d=(300, 320),
+    )
+
+    # 执行解算
+    proc_top, proc_side = process_fish_3d_data(
+        top_fishes=[top_fish],
+        side_fishes=[side_fish],
+        top_depth_map=top_depth,
+        side_depth_map=side_depth,
+        top_cam_params=top_cam_cfg,
+        side_cam_params=side_cam_cfg,
+    )
+
+    # 验证填充结果
+    print("俯视 spine_3d 矩阵 Shape:", proc_top[0].spine_3d.shape)
+    print("俯视 spine_3d 第一个点:", proc_top[0].spine_3d[0])
+    print("侧视 top_kpt_3d 坐标:", proc_side[0].top_kpt_3d)

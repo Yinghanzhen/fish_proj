@@ -4,7 +4,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation as R
 
-from fish_weight_estimation.fish_class import TopFishData
+from fish_weight_estimation.fish_camera_class import TopFishData
 
 # 模型全局缓存
 _PCA_CACHE: Dict[str, Any] = {}
