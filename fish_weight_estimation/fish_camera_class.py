@@ -5,7 +5,7 @@ from typing import Tuple, List, Optional
 @dataclass
 class TopFishData:
     """俯视角单条鱼的数据结构"""
-    fish_id: int  # 鱼的标识 / 追踪 ID
+    fish_id: int
     bbox: Tuple[float, float, float, float]  # 2D 检测框 [xmin, ymin, xmax, ymax]
     head_kpt_2d: Tuple[float, float]  # 鱼头关键点 2D 像素坐标 (x, y)
     tail_kpt_2d: Tuple[float, float]  # 鱼尾关键点 2D 像素坐标 (x, y)
@@ -39,7 +39,7 @@ class TopFishData:
 @dataclass
 class SideFishData:
     """侧视角单条鱼的数据结构"""
-    fish_id: int  # 鱼的标识 / 追踪 ID
+    fish_id: int
     bbox: Tuple[float, float, float, float]  # 2D 检测框 [xmin, ymin, xmax, ymax]
     top_kpt_2d: Tuple[float, float]  # 背部(顶端)关键点 2D 像素坐标 (x, y)
     bottom_kpt_2d: Tuple[float, float]  # 腹部(底端)关键点 2D 像素坐标 (x, y)
@@ -66,8 +66,7 @@ class CameraParams:
     fy: float  # 焦距 fy
     cx: float  # 光心 cx
     cy: float  # 光心 cy
-
-    air_dist_mm: float = 400.0  # 俯视: 相机到水面距离 (mm) | 侧视: 相机到玻璃外表面距离 (mm)
+    air_dist_mm: float  # 俯视: 相机到水面距离 (mm) | 侧视: 相机到玻璃外表面距离 (mm)
     glass_thick_mm: float = (
         0.0  # 玻璃厚度 (mm) (仅侧视三介质折射时使用，俯视填 0)
     )

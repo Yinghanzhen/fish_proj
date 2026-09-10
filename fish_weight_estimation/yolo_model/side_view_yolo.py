@@ -20,5 +20,5 @@ if __name__ == '__main__':
         weight_decay=0.0005,
         dropout=0.1,
         optimizer='MuSGD',
-        pretrained="yolo26n-pose.pt",
+        pretrained="weights/yolo26n-pose.pt",
     )

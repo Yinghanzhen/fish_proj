@@ -1,13 +1,17 @@
-side_model_path:
 top_backbone_model_path:
 top_img:
-side_img:
-output_dir: "result"
 top_fx:
 top_fy:
 top_cx:
 top_cy:
+top_air_dist_mm:
+
+side_model_path:
+side_img:
 side_fx:
 side_fy:
 side_cx:
 side_cy:
+side_air_dist_mm:
+
+output_dir: "result"

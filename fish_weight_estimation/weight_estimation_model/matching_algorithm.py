@@ -33,7 +33,7 @@ def cross_view_fish_matching(
     if N == 0 or M == 0:
         return [], np.empty((N, M))
 
-    # 1. 提取归一化的 X 排序（包含容差机制）
+    # 1. 提取每条鱼 bbox 左上角的 x 坐标，得到两个数组
     top_x = np.array([f.bbox[0] for f in top_fishes])
     side_x = np.array([f.bbox[0] for f in side_fishes])
 
@@ -52,7 +52,7 @@ def cross_view_fish_matching(
     top_x_ranks = compute_relative_x_rank(top_x)
     side_x_ranks = compute_relative_x_rank(side_x)
 
-    # 2. 提取纵深相对位置 (【修复核心】纠正映射方向)
+    # 2. 提取纵深相对位置
     top_y = np.array([f.y_mid for f in top_fishes])
     side_depths = np.array([f.top_kpt_3d[2] if f.top_kpt_3d else 0.0 for f in side_fishes])
 

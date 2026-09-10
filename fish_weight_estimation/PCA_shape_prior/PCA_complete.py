@@ -28,8 +28,8 @@ def batch_repair_fish_skeletons(
     pca_model_path: str = "fish_pca_model.pkl",
     depth_threshold: float = 0.15,
 ) -> None:
-    """批量对鱼实例列表进行 3D 骨架遮挡检测与 PCA 修复（假设头尾关键点恒不遮挡）"""
-    # 1. 读取 PCA 模型（带缓存）
+    """批量对鱼实例列表进行 3D 骨架遮挡检测与 PCA_shape_prior 修复（假设头尾关键点恒不遮挡）"""
+    # 1. 读取 PCA_shape_prior 模型（带缓存）
     if pca_model_path not in _PCA_CACHE:
         with open(pca_model_path, "rb") as f:
             _PCA_CACHE[pca_model_path] = pickle.load(f)
@@ -89,7 +89,7 @@ def batch_repair_fish_skeletons(
 
         skel_aligned = rot.apply(skel_norm)
 
-        # 3. PCA 最小二乘求解与缺失重建
+        # 3. PCA_shape_prior 最小二乘求解与缺失重建
         mask_flat = np.repeat(valid_mask, 3)
 
         alpha, _, _, _ = np.linalg.lstsq(

@@ -4,16 +4,15 @@ from sklearn.decomposition import PCA
 from scipy.interpolate import interp1d
 from typing import List
 
-
 class FishSpinePCAPriorTrainer:
     """
-    鱼体 3D 脊柱骨架线 PCA 形状先验训练器
+    鱼体 3D 脊柱骨架线 PCA_shape_prior 形状先验训练器
     """
 
     def __init__(self, n_target_points: int = 100, n_components: int = 5):
         """
         :param n_target_points: 重采样后的固定骨架点数 (默认 100 点)
-        :param n_components: 保留的 PCA 主成分数量 (通常 3-6 个主成分即可解释 95%+ 的形状变异)
+        :param n_components: 保留的 PCA_shape_prior 主成分数量 (通常 3-6 个主成分即可解释 95%+ 的形状变异)
         """
         self.n_target_points = n_target_points
         self.n_components = n_components
@@ -57,7 +56,7 @@ class FishSpinePCAPriorTrainer:
 
     def fit(self, raw_spines_list: List[np.ndarray]) -> "FishSpinePCAPriorTrainer":
         """
-        预处理所有骨架线并训练 PCA 模型
+        预处理所有骨架线并训练 PCA_shape_prior 模型
         :param raw_spines_list: n 条鱼的原始 3D 骨架线列表, 每个元素为 shape=(Mi, 3) 的点集
         """
         print(f" 开始预处理 {len(raw_spines_list)} 条原始 3D 骨架线...")
@@ -85,13 +84,13 @@ class FishSpinePCAPriorTrainer:
         X_train = np.array(processed_shapes)  # shape=(n_samples, 3 * n_target_points)
         print(f" 训练矩阵构建完成，样本维度: {X_train.shape}")
 
-        # 4. 训练 PCA 模型
+        # 4. 训练 PCA_shape_prior 模型
         self.pca.fit(X_train)
         self.mean_shape_ = self.pca.mean_
 
         # 打印解释方差比
         explained_variance = np.sum(self.pca.explained_variance_ratio_) * 100
-        print(f" PCA 训练完成！前 {self.n_components} 个主成分累计解释方差: {explained_variance:.2f}%")
+        print(f" PCA_shape_prior 训练完成！前 {self.n_components} 个主成分累计解释方差: {explained_variance:.2f}%")
         for i, ratio in enumerate(self.pca.explained_variance_ratio_):
             print(f"   - PC{i + 1}: {ratio * 100:.2f}%")
 
@@ -99,7 +98,7 @@ class FishSpinePCAPriorTrainer:
 
     def save_model(self, file_path: str = "fish_pca_prior.pkl"):
         """
-        打包保存 PCA 模型、参数以及配置，供后续提取/补全调用
+        打包保存 PCA_shape_prior 模型、参数以及配置，供后续提取/补全调用
         """
         if self.mean_shape_ is None:
             raise RuntimeError("模型尚未训练，请先调用 .fit() 方法！")
@@ -114,7 +113,7 @@ class FishSpinePCAPriorTrainer:
         }
 
         joblib.dump(save_dict, file_path)
-        print(f" PCA 形状先验模型已成功保存至: {file_path}")
+        print(f" PCA_shape_prior 形状先验模型已保存至: {file_path}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 from fish_weight_estimation.fish_camera_class import TopFishData,SideFishData
 import cv2
 import numpy as np
-from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 from skimage.morphology import skeletonize
 

@@ -1,9 +1,9 @@
 from ultralytics import YOLO
 if __name__ == '__main__':
 
-    model = YOLO(r"fish_weight_estimation/yolo_model/yolo26_att_best.yaml")
+    model = YOLO(r"config/yolo26_att_best_pose.yaml")
     model.train(
-        data=r"fish_weight_estimation/yolo_model/fish.yaml",
+        data=r"config/side_view_pose.yaml",
         batch=4,
         epochs=200,
         imgsz=640,
@@ -20,5 +20,5 @@ if __name__ == '__main__':
         weight_decay=0.0005,
         dropout=0.1,
         optimizer='MuSGD',
-        pretrained="yolo26n.pt",
+        pretrained="weights/yolo26n-pose.pt",
     )

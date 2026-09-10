@@ -18,8 +18,8 @@ def calculate_lengths(top_fishes: List[TopFishData]) -> None:
         pts = np.asarray(fish.spine_3d, dtype=np.float64)
 
         # 计算相邻点之间的 3D 欧氏距离并求和
-        diffs = np.diff(pts, axis=0)
-        segment_lengths = np.linalg.norm(diffs, axis=1)
+        diffs = np.diff(pts, axis=0)#相邻元素按列求差
+        segment_lengths = np.linalg.norm(diffs, axis=1)#求每段之间长度
         fish.spine_length = float(np.sum(segment_lengths))
 
 
