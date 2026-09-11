@@ -186,7 +186,7 @@ def train():
     lr = 1e-3
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"=== 启动多任务 YOLO 训练 | 设备: {device} ===")
+    print(f"启动多任务 YOLO 训练，设备: {device}")
 
     # 1. 载入完整数据集并划分 训练集 / 验证集
     full_dataset = JSONMultiTaskDataset(

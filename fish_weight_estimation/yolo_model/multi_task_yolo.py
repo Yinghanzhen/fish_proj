@@ -168,31 +168,44 @@ class MultiTaskYOLO(nn.Module):
 
 
 class MultiTaskYOLOLoss(nn.Module):
-    """多任务联合 Loss 函数"""
-    def __init__(self, w_box=7.5, w_seg=2.5, w_pose=12.0):
+    """多任务联合 Loss 函数 (含单目标前景置信度损失)"""
+
+    def __init__(self, w_box=7.5, w_seg=2.5, w_pose=12.0, w_obj=1.0):
         super().__init__()
         self.w_box = w_box
         self.w_seg = w_seg
         self.w_pose = w_pose
+        self.w_obj = w_obj
 
         self.bce_mask = nn.BCEWithLogitsLoss()
+        self.bce_obj = nn.BCEWithLogitsLoss()  # 用于训练单类别的目标置信度
         self.mse_kpt = nn.MSELoss()
         self.l1_box = nn.L1Loss()
 
     def forward(self, preds, targets):
         device = preds["protos"].device
 
-        # 1. Bbox Loss (以 P3 特征图计算示范)
-        pred_boxes_p3 = preds["boxes"][0]
+        # 1. Bbox 坐标 Loss 与 目标置信度 Loss
+        pred_p3 = preds["boxes"][0]
+        pred_boxes_p3 = pred_p3[:, :4, :10, :10]  # 前 4 通道为坐标
+        pred_obj_p3 = pred_p3[:, 4:5, :10, :10]  # 第 5 通道为前景置信度
+
         gt_boxes = targets["boxes"].to(device)
+
+        # 坐标损失
         loss_box = self.l1_box(
-            pred_boxes_p3[:, :4, :10, :10],
-            gt_boxes[:, :1, :4].expand(-1, -1, 10, 10),
+            pred_boxes_p3, gt_boxes[:, :1, :4].expand(-1, -1, 10, 10)
         )
 
-        # 2. Mask Loss (160x160 降采样分辨率对比)
+        # 置信度损失：存在目标的区域标签为 1.0
+        gt_obj = torch.ones_like(pred_obj_p3)
+        loss_obj = self.bce_obj(pred_obj_p3, gt_obj)
+
+        # 2. Mask Loss
         gt_masks = targets["masks"].to(device)
-        gt_masks_160 = F.interpolate(gt_masks, size=(160, 160), mode="nearest")
+        gt_masks_160 = F.interpolate(
+            gt_masks, size=(160, 160), mode="nearest"
+        )
         raw_masks_160 = preds["masks_raw"]
         loss_seg = self.bce_mask(raw_masks_160[:, :1, :, :], gt_masks_160)
 
@@ -210,12 +223,14 @@ class MultiTaskYOLOLoss(nn.Module):
             (self.w_box * loss_box)
             + (self.w_seg * loss_seg)
             + (self.w_pose * loss_pose)
+            + (self.w_obj * loss_obj)
         )
 
         return total_loss, {
             "loss_box": loss_box.item(),
             "loss_seg": loss_seg.item(),
             "loss_pose": loss_pose.item(),
+            "loss_obj": loss_obj.item(),
             "total_loss": total_loss.item(),
         }
 
