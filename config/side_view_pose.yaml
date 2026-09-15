@@ -1,8 +1,8 @@
 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-train: C:\Users\ying'han'zhen\Desktop\data\images\train
-val: C:\Users\ying'han'zhen\Desktop\data\images\val
+train: data/side_fish_data/images/train
+val: data/side_fish_data/images/val
 nc: 1
 names:
   0: California_bass

@@ -103,7 +103,7 @@ def process_fish_3d_data(
     side_depth_map: Optional[np.ndarray] = None,
     top_cam_params: Optional[Union[CameraParams, dict]] = None,
     side_cam_params: Optional[Union[CameraParams, dict]] = None,
-) -> Tuple[List[TopFishData], List[SideFishData]]:
+):
     """读取深度图与相机参数，自动解算并填入 top_fishes 与 side_fishes 中的所有 3D 关键点坐标与 3D 骨架线。"""
 
     def parse_params(p):
@@ -167,8 +167,6 @@ def process_fish_3d_data(
                 fish.bottom_kpt_3d = pixel_depth_to_3d_refracted(
                     u, v, d_bottom, side_cam, is_side_view=True
                 )
-
-    return top_fishes, side_fishes
 
 
 # 5. 测试运行示例

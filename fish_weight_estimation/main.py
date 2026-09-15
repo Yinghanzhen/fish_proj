@@ -20,20 +20,23 @@ def parse_args():
 
 
 def main():
-    # args = parse_args()
-    # with open(args.config, 'r', encoding='utf-8') as f:
-    #     config = yaml.safe_load(f)
+    args = parse_args()
+    with open(args.config, 'r', encoding='utf-8') as f:
+         config = yaml.safe_load(f)
 
     #侧视图像输入专用YOLO
-    model = YOLO("")
-    side_results=model.predict("")
+    model = YOLO("best.pt")
+    side_results=model.predict(
+        imgsz=640,
+        device=0,
+    )
     side_fishes = []
 
     #每条鱼实例化
     for i, (box, kpts) in enumerate(zip(side_results[0].boxes.xyxy, side_results[0].keypoints.xy)):
         x1, y1, x2, y2 = box.tolist()
-        top_x, top_y = kpts[0].tolist()  # 第一个关键点：背部
-        bottom_x, bottom_y = kpts[1].tolist()  # 第二个关键点：腹部
+        top_x, top_y = kpts[0].tolist()
+        bottom_x, bottom_y = kpts[1].tolist()
 
         fish = SideFishData(
             fish_id=i,
@@ -65,10 +68,10 @@ def main():
     #获取三维坐标         ！！！！！！！！！！！！！此步骤暂未完成，需按照实际相机情况调整！！！！！！！！！！！！！！
     top_camera_params = CameraParams(fx=1,fy=1,cx=1,cy=1,air_dist_mm=40)
     side_camera_params = CameraParams(fx=1,fy=1,cx=1,cy=1,air_dist_mm=40)
-    re3d = process_fish_3d_data(top_fishes=top_fishes,
-                                side_fishes=side_fishes,
-                                side_cam_params=side_camera_params,
-                                top_cam_params=top_camera_params)\
+    process_fish_3d_data(top_fishes=top_fishes,
+                         side_fishes=side_fishes,
+                         side_cam_params=side_camera_params,
+                         top_cam_params=top_camera_params)
 
     #鱼体遮挡补全
     batch_repair_fish_skeletons(top_fishes)
