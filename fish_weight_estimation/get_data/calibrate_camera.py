@@ -148,7 +148,6 @@ def calibrate_dual_cameras(
     visualize: bool = False,
 ) -> Tuple[Dict, Dict]:
     """【主入口】批量处理俯视与侧视双相机标定"""
-    print("====== 双视角相机 (俯视 + 侧视) 联合标定程序启动 ======")
 
     # 1. 标定俯视相机
     top_cam_dict, _ = calibrate_single_camera(
@@ -193,7 +192,7 @@ if __name__ == "__main__":
 
     VISUALIZE = False              # 是否弹窗预览角点检测结果
 
-    print("      水下双视角相机标定程序开始运行          ")
+    print("水下双视角相机标定程序开始运行")
 
     try:
         # 2. 调用联合标定入口函数
@@ -216,7 +215,6 @@ if __name__ == "__main__":
 
         print("\n【侧视相机 (Side-View) 相机参数】:")
         print(json.dumps(side_cam_dict, indent=4, ensure_ascii=False))
-
 
     except FileNotFoundError as e:
         print(f"\n[错误] 找不到文件夹或图片: {e}")
